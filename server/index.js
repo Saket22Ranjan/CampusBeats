@@ -9,23 +9,18 @@ import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
 import messageRoutes from "./routes/messageRoutes.js";
 import uploadRoutes from "./routes/uploadRoutes.js";
+
 import Message from "./models/Message.js";
+import User from "./models/User.js";
 
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
+const io = new Server(server, { cors: { origin: "*" } });
 
-const io = new Server(server, {
-    cors: {
-        origin: "*",
-    },
-});
-
-/* ================= MIDDLEWARE ================= */
 app.use(cors());
 app.use(express.json());
-
 app.use("/uploads", express.static("uploads"));
 
 app.use("/api/auth", authRoutes);
@@ -33,22 +28,28 @@ app.use("/api/users", userRoutes);
 app.use("/api/messages", messageRoutes);
 app.use("/api/upload", uploadRoutes);
 
-/* ================= MONGO ================= */
 mongoose
     .connect(process.env.MONGO_URI)
     .then(() => console.log("MongoDB connected"))
-    .catch((err) => console.log(err));
+    .catch(console.log);
 
-/* ================= SOCKET.IO ================= */
+const onlineUsers = new Set();
+
 io.on("connection", (socket) => {
     console.log("Socket connected:", socket.id);
 
-    // join private room
+    socket.on("user_online", async (userId) => {
+        socket.userId = userId;
+        onlineUsers.add(userId);
+
+        await User.findByIdAndUpdate(userId, { isOnline: true });
+        io.emit("online_users", Array.from(onlineUsers));
+    });
+
     socket.on("join_private", ({ room }) => {
         socket.join(room);
     });
 
-    // send message
     socket.on("private_message", async (data) => {
         const msg = await Message.create({
             room: data.room,
@@ -64,28 +65,28 @@ io.on("connection", (socket) => {
         io.to(data.room).emit("receive_private", msg);
     });
 
-    // seen message (ONLY receiver)
     socket.on("seen_message", async ({ room, userId }) => {
         await Message.updateMany(
-            {
-                room,
-                receiverId: userId,
-                seen: false,
-            },
+            { room, receiverId: userId, seen: false },
             { seen: true }
         );
 
-        socket.to(room).emit("seen", userId);
+        io.to(room).emit("seen", userId);
     });
 
-    socket.on("disconnect", () => {
-        console.log("Socket disconnected:", socket.id);
+    socket.on("disconnect", async () => {
+        if (socket.userId) {
+            onlineUsers.delete(socket.userId);
+            await User.findByIdAndUpdate(socket.userId, {
+                isOnline: false,
+                lastSeen: new Date(),
+            });
+
+            io.emit("online_users", Array.from(onlineUsers));
+        }
     });
 });
 
-/* ================= SERVER START ================= */
-const PORT = process.env.PORT || 5000;
-
-server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+server.listen(5000, () => {
+    console.log("Server running on port 5000");
 });
