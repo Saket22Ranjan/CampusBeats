@@ -2,31 +2,24 @@ import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema(
     {
-        name: {
-            type: String,
-            required: true,
-            trim: true,
-        },
+        name: { type: String, required: true },
+        email: { type: String, required: true, unique: true },
+        password: { type: String, required: true },
 
-        email: {
-            type: String,
-            required: true,
-            unique: true,
-        },
+        // 🔥 College profile
+        college: { type: String },
+        course: { type: String },
+        branch: { type: String },
+        year: { type: String },
+        phone: { type: String },
 
-        password: {
-            type: String,
-            required: true,
-        },
-
-        isOnline: {
+        isProfileComplete: {
             type: Boolean,
             default: false,
         },
 
-        lastSeen: {
-            type: Date,
-        },
+        isOnline: { type: Boolean, default: false },
+        lastSeen: { type: Date },
     },
     { timestamps: true }
 );

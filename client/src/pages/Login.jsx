@@ -1,47 +1,93 @@
 import { useState } from "react";
+import axios from "axios";
 import { useAuth } from "../context/AuthContext";
-import { useNavigate, Link } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 export default function Login() {
-    const { login } = useAuth();
-    const navigate = useNavigate();
+    const { setUser } = useAuth();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
+    const [loading, setLoading] = useState(false);
 
-    const submit = async (e) => {
+    const login = async (e) => {
         e.preventDefault();
+        setLoading(true);
+
         try {
-            await login(email, password);
-            navigate("/chat");
+            const res = await axios.post("http://localhost:5000/api/auth/login", {
+                email,
+                password,
+            });
+
+            setUser(res.data);
         } catch (err) {
-            alert(err.response?.data?.message || "Login failed");
+            alert("Invalid credentials");
+        } finally {
+            setLoading(false);
         }
     };
 
     return (
-        <div className="h-screen flex items-center justify-center bg-gray-900">
-            <form onSubmit={submit} className="bg-gray-800 p-8 rounded w-80 text-white">
-                <h1 className="text-2xl font-bold mb-6 text-center">Campus Beats</h1>
+        <div className="min-h-screen relative flex items-center justify-center bg-gradient-to-br from-[#020617] via-[#020617] to-[#0f172a] text-white overflow-hidden">
 
-                <input
-                    className="w-full p-2 mb-4 bg-gray-700 rounded"
-                    placeholder="College Email"
-                    onChange={(e) => setEmail(e.target.value)}
-                />
+            {/* 🔥 ABSTRACT BLOBS (GRAPHIC ART) */}
+            <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-600/30 rounded-full blur-3xl" />
+            <div className="absolute top-1/3 -right-40 w-96 h-96 bg-purple-600/30 rounded-full blur-3xl" />
+            <div className="absolute -bottom-40 left-1/3 w-96 h-96 bg-pink-600/20 rounded-full blur-3xl" />
 
-                <input
-                    type="password"
-                    className="w-full p-2 mb-4 bg-gray-700 rounded"
-                    placeholder="Password"
-                    onChange={(e) => setPassword(e.target.value)}
-                />
+            {/* 🔒 LOGIN CARD */}
+            <form
+                onSubmit={login}
+                className="relative z-10 w-[380px] bg-white/10 backdrop-blur-xl border border-white/20 rounded-2xl p-8 shadow-2xl"
+            >
+                {/* BRAND */}
+                <h1 className="text-3xl font-extrabold text-center tracking-wide">
+                    Campus<span className="text-indigo-400">Beats</span>
+                </h1>
 
-                <button className="w-full bg-indigo-600 py-2 rounded">Login</button>
+                <p className="text-center text-sm text-gray-300 mt-2">
+                    Where college conversations come alive 🎧
+                </p>
 
-                <p className="mt-4 text-sm text-center">
-                    New here?{" "}
-                    <Link to="/register" className="text-indigo-400">
-                        Register
+                {/* SLOGAN */}
+                <p className="text-center text-xs text-gray-400 mt-1 italic">
+                    “Connect. Collaborate. Campus.”
+                </p>
+
+                {/* FORM */}
+                <div className="mt-8 space-y-4">
+                    <input
+                        type="email"
+                        placeholder="College Email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                        className="w-full px-4 py-2 rounded-lg bg-white/10 outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+
+                    <input
+                        type="password"
+                        placeholder="Password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        required
+                        className="w-full px-4 py-2 rounded-lg bg-white/10 outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full bg-indigo-600 hover:bg-indigo-700 transition py-2 rounded-lg font-semibold"
+                    >
+                        {loading ? "Signing in..." : "Login"}
+                    </button>
+                </div>
+
+                {/* FOOTER */}
+                <p className="text-center text-sm text-gray-400 mt-6">
+                    New to CampusBeats?{" "}
+                    <Link to="/register" className="text-indigo-400 hover:underline">
+                        Create account
                     </Link>
                 </p>
             </form>

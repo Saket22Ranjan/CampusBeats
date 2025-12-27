@@ -1,49 +1,59 @@
 import { useState } from "react";
-import { useAuth } from "../context/AuthContext";
-import { useNavigate, Link } from "react-router-dom";
+import axios from "axios";
+import { Link } from "react-router-dom";
 
 export default function Register() {
-    const { register } = useAuth();
-    const navigate = useNavigate();
     const [form, setForm] = useState({
         name: "",
         email: "",
         password: "",
-        college: "",
     });
 
     const submit = async (e) => {
         e.preventDefault();
         try {
-            await register(form);
-            navigate("/");
-        } catch (err) {
-            alert(err.response?.data?.message || "Registration failed");
+            await axios.post("http://localhost:5000/api/auth/register", form);
+            alert("Account created. Please login.");
+        } catch {
+            alert("Registration failed");
         }
     };
 
     return (
-        <div className="h-screen flex items-center justify-center bg-gray-900">
-            <form onSubmit={submit} className="bg-gray-800 p-8 rounded w-80 text-white">
-                <h1 className="text-xl font-bold mb-6 text-center">Join Campus Beats</h1>
+        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#020617] to-[#0f172a] text-white">
+            <form
+                onSubmit={submit}
+                className="w-[380px] bg-white/10 backdrop-blur-xl border border-white/20 p-8 rounded-2xl shadow-xl"
+            >
+                <h1 className="text-3xl font-extrabold text-center">
+                    Join <span className="text-indigo-400">CampusBeats</span>
+                </h1>
+                <p className="text-center text-gray-400 mt-2">
+                    College conversations, simplified 🎓
+                </p>
 
-                {["name", "email", "college", "password"].map((f) => (
-                    <input
-                        key={f}
-                        type={f === "password" ? "password" : "text"}
-                        placeholder={f}
-                        className="w-full p-2 mb-3 bg-gray-700 rounded"
-                        onChange={(e) => setForm({ ...form, [f]: e.target.value })}
-                    />
-                ))}
+                <div className="mt-6 space-y-4">
+                    {["name", "email", "password"].map((field) => (
+                        <input
+                            key={field}
+                            type={field === "password" ? "password" : "text"}
+                            placeholder={field.toUpperCase()}
+                            className="w-full px-4 py-2 bg-white/10 rounded outline-none focus:ring-2 focus:ring-indigo-500"
+                            onChange={(e) =>
+                                setForm({ ...form, [field]: e.target.value })
+                            }
+                            required
+                        />
+                    ))}
 
-                <button className="w-full bg-indigo-600 py-2 rounded">
-                    Register
-                </button>
+                    <button className="w-full bg-indigo-600 py-2 rounded font-semibold">
+                        Create Account
+                    </button>
+                </div>
 
-                <p className="mt-4 text-sm text-center">
+                <p className="text-center text-sm text-gray-400 mt-4">
                     Already registered?{" "}
-                    <Link to="/" className="text-indigo-400">
+                    <Link to="/" className="text-indigo-400 hover:underline">
                         Login
                     </Link>
                 </p>

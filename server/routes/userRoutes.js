@@ -3,17 +3,31 @@ import User from "../models/User.js";
 
 const router = express.Router();
 
-// get all users
+/* GET ALL USERS */
 router.get("/", async (req, res) => {
-    const users = await User.find().select("-password");
+    const users = await User.find({}, "-password");
     res.json(users);
 });
 
-// update profile
+/* UPDATE PROFILE (COLLEGE DETAILS) */
 router.put("/:id", async (req, res) => {
-    const { name, college } = req.body;
-    await User.findByIdAndUpdate(req.params.id, { name, college });
-    res.json({ message: "Profile updated" });
+    const { name, college, course, branch, year, phone } = req.body;
+
+    const user = await User.findByIdAndUpdate(
+        req.params.id,
+        {
+            name,
+            college,
+            course,
+            branch,
+            year,
+            phone,
+            isProfileComplete: true,
+        },
+        { new: true }
+    );
+
+    res.json(user);
 });
 
 export default router;
