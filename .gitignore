@@ -1,0 +1,11 @@
+# env
+.env
+
+# node
+node_modules/
+
+# uploads
+server/uploads/
+
+# misc
+.DS_Store
