@@ -13,12 +13,13 @@ import uploadRoutes from "./routes/uploadRoutes.js";
 import Message from "./models/Message.js";
 import User from "./models/User.js";
 
-
 dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const io = new Server(server, {
+    cors: { origin: "*" },
+});
 
 app.use(cors());
 app.use(express.json());
@@ -39,6 +40,7 @@ const onlineUsers = new Set();
 io.on("connection", (socket) => {
     console.log("Socket connected:", socket.id);
 
+    /* ================= USER ONLINE ================= */
     socket.on("user_online", async (userId) => {
         socket.userId = userId;
         onlineUsers.add(userId);
@@ -47,25 +49,35 @@ io.on("connection", (socket) => {
         io.emit("online_users", Array.from(onlineUsers));
     });
 
+    /* ================= JOIN ROOM ================= */
     socket.on("join_private", ({ room }) => {
         socket.join(room);
     });
 
+    /* ================= PRIVATE MESSAGE (FIXED) ================= */
     socket.on("private_message", async (data) => {
-        const msg = await Message.create({
-            room: data.room,
-            senderId: data.senderId,
-            receiverId: data.receiverId,
-            senderName: data.senderName,
-            text: data.message,
-            mediaType: data.mediaType,
-            delivered: true,
-            seen: false,
-        });
+        try {
+            const savedMessage = await Message.create({
+                room: data.room,
+                senderId: data.senderId,
+                receiverId: data.receiverId,
+                senderName: data.senderName || "",
+                text: data.text || "",
+                image: data.image || null,        // 🔥 IMAGE FIX
+                mediaType: data.mediaType || "text",
+                delivered: true,
+                seen: false,
+                createdAt: new Date(),
+            });
 
-        io.to(data.room).emit("receive_private", msg);
+            // 🔥 emit SAVED message (not raw data)
+            io.to(data.room).emit("receive_private", savedMessage);
+        } catch (err) {
+            console.log("Message save error:", err);
+        }
     });
 
+    /* ================= SEEN ================= */
     socket.on("seen_message", async ({ room, userId }) => {
         await Message.updateMany(
             { room, receiverId: userId, seen: false },
@@ -75,9 +87,11 @@ io.on("connection", (socket) => {
         io.to(room).emit("seen", userId);
     });
 
+    /* ================= DISCONNECT ================= */
     socket.on("disconnect", async () => {
         if (socket.userId) {
             onlineUsers.delete(socket.userId);
+
             await User.findByIdAndUpdate(socket.userId, {
                 isOnline: false,
                 lastSeen: new Date(),
