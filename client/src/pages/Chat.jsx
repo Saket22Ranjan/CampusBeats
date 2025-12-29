@@ -1,6 +1,6 @@
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { io } from "socket.io-client";
 
@@ -16,14 +16,14 @@ export default function Chat() {
   const [currentRoom, setCurrentRoom] = useState(null);
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
+  const [typingUser, setTypingUser] = useState(null);
 
-  // image states
   const [image, setImage] = useState(null);
   const [imagePreview, setImagePreview] = useState(null);
-  const fileInputRef = useRef();
+  const fileInputRef = useRef(null);
 
-  const [unread, setUnread] = useState({});
   const bottomRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
 
   /* ================= INIT ================= */
   useEffect(() => {
@@ -36,36 +36,41 @@ export default function Chat() {
     socket.on("online_users", setOnlineUsers);
 
     socket.on("receive_private", (msg) => {
-      const isCurrent =
-        currentChat && msg.senderId === currentChat._id;
+      // ✅ ignore own message (already added optimistically)
+      if (String(msg.senderId) === String(user._id)) return;
 
-      if (isCurrent) {
-        setMessages((prev) => [...prev, msg]);
-
-        socket.emit("seen_message", {
-          room: msg.room,
-          userId: user._id,
-        });
-      } else {
-        setUnread((prev) => ({
-          ...prev,
-          [msg.senderId]: (prev[msg.senderId] || 0) + 1,
-        }));
-      }
+      setMessages((prev) => [...prev, msg]);
+      socket.emit("seen_message", { room: msg.room, userId: user._id });
     });
 
     socket.on("seen", () => {
       setMessages((prev) =>
         prev.map((m) =>
-          m.senderId === user._id ? { ...m, seen: true } : m
+          String(m.senderId) === String(user._id)
+            ? { ...m, seen: true }
+            : m
         )
       );
     });
 
-    return () => socket.off();
+    socket.on("typing", ({ userId }) => {
+      if (currentChat && String(userId) === String(currentChat._id)) {
+        setTypingUser(userId);
+      }
+    });
+
+    socket.on("stop_typing", () => setTypingUser(null));
+
+    return () => {
+      socket.off("online_users");
+      socket.off("receive_private");
+      socket.off("seen");
+      socket.off("typing");
+      socket.off("stop_typing");
+    };
   }, [user._id, currentChat]);
 
-  /* ================= AUTO SCROLL ================= */
+  /* ================= AUTOSCROLL ================= */
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
@@ -83,20 +88,12 @@ export default function Chat() {
       `http://localhost:5000/api/messages/${room}`
     );
     setMessages(res.data);
-
-    socket.emit("seen_message", {
-      room,
-      userId: user._id,
-    });
-
-    setUnread((prev) => ({ ...prev, [u._id]: 0 }));
   };
 
-  /* ================= IMAGE SELECT ================= */
+  /* ================= IMAGE ================= */
   const handleImageSelect = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     setImage(file);
     setImagePreview(URL.createObjectURL(file));
   };
@@ -111,173 +108,96 @@ export default function Chat() {
     if (image) {
       const formData = new FormData();
       formData.append("image", image);
-
       const uploadRes = await axios.post(
         "http://localhost:5000/api/upload",
-        formData,
-        { headers: { "Content-Type": "multipart/form-data" } }
+        formData
       );
-
       imageUrl = uploadRes.data.imageUrl;
     }
 
-    const newMsg = {
-      _id: Date.now(),
+    const msgData = {
+      _id: Date.now(), // temp id
       room: currentRoom,
       senderId: user._id,
       receiverId: currentChat._id,
-      text,
-      image: imageUrl, // 🔥 IMPORTANT
+      text: text || "",
+      image: imageUrl || null,
       createdAt: new Date(),
       seen: false,
     };
 
-    // optimistic
-    setMessages((prev) => [...prev, newMsg]);
-    socket.emit("private_message", newMsg);
+    // ✅ optimistic add (ONLY PLACE sender message is added)
+    setMessages((prev) => [...prev, msgData]);
+
+    socket.emit("private_message", msgData);
 
     setText("");
     setImage(null);
     setImagePreview(null);
   };
 
-  const time = (t) =>
-    new Date(t).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-
   return (
-    <div className="h-screen flex bg-gradient-to-br from-[#020617] to-[#0f172a] text-white relative">
-
-      {/* IMAGE PREVIEW MODAL */}
-      {imagePreview && (
-        <div className="absolute inset-0 bg-black/80 z-50 flex items-center justify-center">
-          <div className="bg-[#020617] p-4 rounded-xl w-[90%] max-w-md">
-            <img
-              src={imagePreview}
-              alt="preview"
-              className="rounded-lg max-h-[300px] mx-auto"
-            />
-
-            <input
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder="Add a caption..."
-              className="w-full mt-3 bg-white/10 px-3 py-2 rounded"
-            />
-
-            <div className="flex justify-end gap-2 mt-3">
-              <button
-                onClick={() => {
-                  setImage(null);
-                  setImagePreview(null);
-                  setText("");
-                }}
-                className="px-4 py-2 bg-gray-600 rounded"
-              >
-                Cancel
-              </button>
-
-              <button
-                onClick={sendMessage}
-                className="px-4 py-2 bg-indigo-600 rounded"
-              >
-                Send
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
+    <div className="h-screen flex bg-gray-900 text-white">
       {/* SIDEBAR */}
-      <div
-        className={`w-full md:w-[300px] bg-[#020617]/90 p-4 flex flex-col
-        ${currentChat ? "hidden md:flex" : "flex"}`}
-      >
-        <div className="flex justify-between mb-4">
-          <h1 className="text-xl font-bold">
-            Campus<span className="text-indigo-400">Beats</span>
-          </h1>
-          <button onClick={toggleTheme}>🌗</button>
-        </div>
+      <div className="w-72 p-4 border-r border-white/10">
+        <h1 className="text-xl font-bold mb-4">
+          Campus<span className="text-indigo-400">Beats</span>
+        </h1>
 
-        <div className="flex-1 overflow-y-auto space-y-1">
-          {users.map((u) => (
-            <div
-              key={u._id}
-              onClick={() => openChat(u)}
-              className="p-2 rounded hover:bg-white/10 cursor-pointer"
-            >
-              <p>{u.name}</p>
-              <p className="text-xs text-gray-400">
-                {onlineUsers.includes(u._id) ? "Online" : "Offline"}
-              </p>
-              {unread[u._id] > 0 && (
-                <span className="text-xs bg-green-500 px-2 rounded">
-                  {unread[u._id]}
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
+        {users.map((u) => (
+          <div
+            key={u._id}
+            onClick={() => openChat(u)}
+            className="p-2 hover:bg-white/10 cursor-pointer rounded"
+          >
+            {u.name}
+            <span className="text-xs ml-2">
+              {onlineUsers.includes(u._id) ? "🟢" : "⚪"}
+            </span>
+          </div>
+        ))}
 
         <button
           onClick={logout}
-          className="mt-4 bg-red-500 py-2 rounded"
+          className="mt-4 bg-red-500 w-full py-2 rounded"
         >
           Logout
         </button>
       </div>
 
       {/* CHAT */}
-      <div
-        className={`flex-1 flex flex-col ${
-          currentChat ? "flex" : "hidden md:flex"
-        }`}
-      >
+      <div className="flex-1 flex flex-col">
         {currentChat && (
           <>
-            <div className="p-3 border-b border-white/10 flex items-center gap-2">
-              <button
-                onClick={() => setCurrentChat(null)}
-                className="md:hidden"
-              >
-                ←
-              </button>
-              <p>{currentChat.name}</p>
+            <div className="p-3 border-b border-white/10">
+              <p className="font-semibold">{currentChat.name}</p>
+              {typingUser && (
+                <p className="text-xs text-green-400">typing...</p>
+              )}
             </div>
 
-            <div className="flex-1 p-4 overflow-y-auto space-y-3">
+            <div className="flex-1 p-4 overflow-y-auto">
               {messages.map((m) => {
-                const isMe = m.senderId === user._id;
+                const isMe =
+                  String(m.senderId) === String(user._id);
                 return (
                   <div
                     key={m._id}
-                    className={`flex ${
-                      isMe ? "justify-end" : "justify-start"
-                    }`}
+                    className={`mb-2 ${isMe ? "text-right" : "text-left"
+                      }`}
                   >
                     <div
-                      className={`max-w-[75%] p-2 rounded-xl ${
-                        isMe ? "bg-indigo-500" : "bg-white/10"
-                      }`}
+                      className={`inline-block px-3 py-2 rounded ${isMe ? "bg-indigo-600" : "bg-gray-700"
+                        }`}
                     >
-                      {m.text && <p>{m.text}</p>}
+                      {m.text}
                       {m.image && (
                         <img
                           src={m.image}
-                          alt="sent"
-                          className="mt-2 rounded-lg max-h-60 cursor-pointer"
-                          onClick={() =>
-                            window.open(m.image, "_blank")
-                          }
+                          alt=""
+                          className="mt-2 max-h-40 rounded"
                         />
                       )}
-                      <div className="flex justify-end gap-1 text-[10px] opacity-70 mt-1">
-                        <span>{time(m.createdAt)}</span>
-                        {isMe && <span>{m.seen ? "✔✔" : "✔"}</span>}
-                      </div>
                     </div>
                   </div>
                 );
@@ -285,35 +205,47 @@ export default function Chat() {
               <div ref={bottomRef} />
             </div>
 
-            {/* INPUT */}
             <form
               onSubmit={sendMessage}
-              className="p-3 flex gap-2 border-t border-white/10 items-center"
+              className="p-3 flex gap-2 border-t border-white/10"
             >
               <button
                 type="button"
                 onClick={() => fileInputRef.current.click()}
-                className="text-xl"
               >
                 📎
               </button>
 
               <input
                 type="file"
-                accept="image/*"
                 ref={fileInputRef}
-                onChange={handleImageSelect}
                 hidden
+                onChange={handleImageSelect}
               />
 
               <input
                 value={text}
-                onChange={(e) => setText(e.target.value)}
-                className="flex-1 bg-white/10 rounded-full px-4 py-2 text-sm"
-                placeholder="Type a message"
+                onChange={(e) => {
+                  setText(e.target.value);
+
+                  socket.emit("typing", {
+                    room: currentRoom,
+                    userId: user._id,
+                  });
+
+                  clearTimeout(typingTimeoutRef.current);
+                  typingTimeoutRef.current = setTimeout(() => {
+                    socket.emit("stop_typing", {
+                      room: currentRoom,
+                      userId: user._id,
+                    });
+                  }, 700);
+                }}
+                className="flex-1 bg-white/10 rounded px-3"
+                placeholder="Type..."
               />
 
-              <button className="bg-indigo-600 px-4 py-2 rounded-full text-sm">
+              <button className="bg-indigo-600 px-4 rounded">
                 Send
               </button>
             </form>

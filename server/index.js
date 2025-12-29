@@ -17,9 +17,7 @@ dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-    cors: { origin: "*" },
-});
+const io = new Server(server, { cors: { origin: "*" } });
 
 app.use(cors());
 app.use(express.json());
@@ -40,7 +38,7 @@ const onlineUsers = new Set();
 io.on("connection", (socket) => {
     console.log("Socket connected:", socket.id);
 
-    /* ================= USER ONLINE ================= */
+    /* ---------- ONLINE ---------- */
     socket.on("user_online", async (userId) => {
         socket.userId = userId;
         onlineUsers.add(userId);
@@ -49,54 +47,52 @@ io.on("connection", (socket) => {
         io.emit("online_users", Array.from(onlineUsers));
     });
 
-    /* ================= JOIN ROOM ================= */
+    /* ---------- JOIN ROOM ---------- */
     socket.on("join_private", ({ room }) => {
         socket.join(room);
     });
 
-    /* ================= PRIVATE MESSAGE (FIXED) ================= */
+    /* ---------- MESSAGE ---------- */
     socket.on("private_message", async (data) => {
-        try {
-            const savedMessage = await Message.create({
-                room: data.room,
-                senderId: data.senderId,
-                receiverId: data.receiverId,
-                senderName: data.senderName || "",
-                text: data.text || "",
-                image: data.image || null,        // 🔥 IMAGE FIX
-                mediaType: data.mediaType || "text",
-                delivered: true,
-                seen: false,
-                createdAt: new Date(),
-            });
+        const saved = await Message.create({
+            room: data.room,
+            senderId: data.senderId,
+            receiverId: data.receiverId,
+            text: data.text || "",
+            image: data.image || null,
+            delivered: true,
+            seen: false,
+        });
 
-            // 🔥 emit SAVED message (not raw data)
-            io.to(data.room).emit("receive_private", savedMessage);
-        } catch (err) {
-            console.log("Message save error:", err);
-        }
+        io.to(data.room).emit("receive_private", saved);
     });
 
-    /* ================= SEEN ================= */
+    /* ---------- SEEN ---------- */
     socket.on("seen_message", async ({ room, userId }) => {
         await Message.updateMany(
             { room, receiverId: userId, seen: false },
             { seen: true }
         );
-
         io.to(room).emit("seen", userId);
     });
 
-    /* ================= DISCONNECT ================= */
+    /* ---------- TYPING INDICATOR ---------- */
+    socket.on("typing", ({ room, userId }) => {
+        socket.to(room).emit("typing", { userId });
+    });
+
+    socket.on("stop_typing", ({ room, userId }) => {
+        socket.to(room).emit("stop_typing", { userId });
+    });
+
+    /* ---------- DISCONNECT ---------- */
     socket.on("disconnect", async () => {
         if (socket.userId) {
             onlineUsers.delete(socket.userId);
-
             await User.findByIdAndUpdate(socket.userId, {
                 isOnline: false,
                 lastSeen: new Date(),
             });
-
             io.emit("online_users", Array.from(onlineUsers));
         }
     });
